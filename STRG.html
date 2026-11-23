@@ -1,0 +1,2193 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стратегический симулятор</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; overflow:hidden; background:#04060a;
+    font-family:"Segoe UI", Roboto, Arial, sans-serif; color:#cfe4ff; user-select:none; }
+  canvas { display:block; position:absolute; inset:0; cursor:crosshair; }
+  #hud { position:absolute; inset:0; pointer-events:none; }
+
+  #top {
+    position:absolute; top:10px; left:50%; transform:translateX(-50%);
+    display:flex; gap:8px; align-items:center;
+    background:rgba(10,20,32,.85); border:1px solid rgba(80,150,220,.35);
+    border-radius:10px; padding:7px 12px; backdrop-filter:blur(6px);
+    box-shadow:0 6px 24px rgba(0,0,0,.55);
+  }
+  .stat { display:flex; flex-direction:column; align-items:center; min-width:64px; }
+  .stat .lbl { font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#6d90b5; }
+  .stat .val { font-size:16px; font-weight:700; color:#eaf4ff; }
+  .stat.res .val { color:#ffd166; }
+  .sep { width:1px; height:26px; background:rgba(80,150,220,.25); }
+
+  #bottom { position:absolute; bottom:12px; left:50%; transform:translateX(-50%);
+    display:flex; gap:8px; align-items:flex-end; max-width:92vw; }
+  .panel { background:rgba(10,20,32,.88); border:1px solid rgba(80,150,220,.35);
+    border-radius:10px; padding:9px; pointer-events:auto;
+    box-shadow:0 6px 24px rgba(0,0,0,.55); backdrop-filter:blur(6px); }
+  .panelTitle { font-size:10px; letter-spacing:.12em; text-transform:uppercase;
+    color:#6d90b5; margin-bottom:7px; }
+  .btn { pointer-events:auto; display:block; width:100%; margin-bottom:5px;
+    background:linear-gradient(180deg,#1b3a5c,#12263c);
+    border:1px solid rgba(90,170,255,.4); color:#d8ecff;
+    padding:6px 10px; border-radius:6px; font-size:12px; font-weight:600;
+    cursor:pointer; transition:.13s; text-align:left; font-family:inherit; white-space:nowrap; }
+  .btn:hover { background:linear-gradient(180deg,#265780,#173350);
+    border-color:#5ab0ff; box-shadow:0 0 12px rgba(90,170,255,.35); }
+  .btn:active { transform:translateY(1px); }
+  .btn:last-child { margin-bottom:0; }
+  .btn .cost { float:right; color:#ffd166; font-weight:700; margin-left:10px; }
+  .btn:disabled { opacity:.35; cursor:not-allowed; }
+  .btn.centerBonus { border-color:rgba(255,200,100,.6); }
+  .queue { font-size:10px; color:#8fb6dd; margin-top:6px; }
+  #hint { position:absolute; bottom:14px; right:236px; font-size:10px; color:#5c7fa3;
+    text-align:right; line-height:1.65; pointer-events:none; }
+  #hint b { color:#8fc0ee; }
+
+  #overlay { position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(3,7,12,.88); pointer-events:auto; flex-direction:column; gap:16px;
+    z-index:50; }
+  #overlay.show { display:flex; }
+  #overlay h1 { font-size:38px; letter-spacing:.06em; text-align:center; }
+  #overlay p { color:#8fb6dd; max-width:540px; text-align:center; line-height:1.6; }
+  #ovButtons { display:flex; gap:12px; flex-wrap:wrap; justify-content:center; }
+  #ovButtons button {
+    background:linear-gradient(180deg,#265780,#173350); border:1px solid #5ab0ff;
+    color:#d8ecff; padding:12px 28px; border-radius:9px; font-size:15px;
+    font-weight:700; cursor:pointer; font-family:inherit; transition:.15s; }
+  #ovButtons button:hover { box-shadow:0 0 22px rgba(90,170,255,.55); transform:translateY(-2px); }
+  .diffdesc { font-size:11px; color:#6d90b5; display:block; font-weight:400; margin-top:4px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div id="top">
+    <div class="stat res"><span class="lbl">Ресурсы</span><span class="val" id="uiRes">0</span></div>
+    <div class="sep"></div>
+    <div class="stat"><span class="lbl">Юниты</span><span class="val" id="uiUnits">0</span></div>
+    <div class="stat"><span class="lbl">Заводы</span><span class="val" id="uiFactories">0</span></div>
+    <div class="sep"></div>
+    <div class="stat" style="min-width:auto"><span class="lbl">Красные</span><span class="val" id="uiRed" style="font-size:14px">—</span></div>
+    <div class="stat" style="min-width:auto"><span class="lbl">Пурпурные</span><span class="val" id="uiPurple" style="font-size:14px">—</span></div>
+  </div>
+
+  <div id="bottom">
+    <div class="panel" id="buildPanel">
+      <div class="panelTitle">Строительство</div>
+      <button class="btn" data-build="factory">🏭 Завод <span class="cost">150</span></button>
+      <button class="btn" data-build="turret">🔫 Турель <span class="cost">100</span></button>
+      <button class="btn" data-build="aa">🚀 ПВО <span class="cost">220</span></button>
+      <button class="btn" data-build="laser">⚡ Лазер <span class="cost">700</span></button>
+      <button class="btn" data-build="drilling">⛏ Буровая <span class="cost">350</span></button>
+      <button class="btn" data-build="protection">🛡 Защита <span class="cost">300</span></button>
+      <div class="queue" id="buildHint">Нужен строитель</div>
+    </div>
+    <div class="panel" id="prodPanel" style="display:none"></div>
+  </div>
+
+  <div id="hint">
+    <b>ЛКМ</b> — выделить / рамка &nbsp;•&nbsp; <b>Shift+ЛКМ</b> — добавить<br>
+    <b>ПКМ</b> — приказ &nbsp;•&nbsp; <b>Край экрана / WASD</b> — камера<br>
+    <b>Esc</b> — отмена &nbsp;•&nbsp; <b>A</b> — все юниты
+  </div>
+</div>
+
+<div id="overlay" class="show">
+  <h1 id="ovTitle">Стратегический симулятор</h1>
+  <p id="ovText">Выберите сложность — от неё зависит скорость развития противников.</p>
+  <div id="ovButtons">
+    <button data-diff="easy">Лёгкая<span class="diffdesc">медленное развитие ИИ</span></button>
+    <button data-diff="normal">Средняя<span class="diffdesc">сбалансированный темп</span></button>
+    <button data-diff="hard">Сложная<span class="diffdesc">ИИ объединяются против вас через 2 минуты</span></button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* =========================================================
+   КОНСТАНТЫ
+   ========================================================= */
+const WORLD = { w: 6000, h: 3400 };
+
+const CENTER = { x: WORLD.w / 2, y: WORLD.h / 2, radius: 560 };
+const CENTER_PROD_MULT = 2;
+const CENTER_COST_MULT = 0.8;
+const CENTER_TURRET_DMG_MULT = 1.6;
+
+const TEAM = [
+  { color:'#4da3ff', dark:'#153a5e', light:'#a8d4ff', name:'Игрок' },
+  { color:'#ff5c5c', dark:'#5a1a1a', light:'#ffb3b3', name:'Красные' },
+  { color:'#b06bff', dark:'#3a1a5e', light:'#d9b3ff', name:'Пурпурные' }
+];
+
+const FACTORY_MULT = 5;
+
+const UNIT_STATS = {
+  harvester:  { hp:90,  speed:55, radius:9,  cost:60,  buildTime:8,  damage:0,  range:0,   cooldown:1,   gather:9,  capacity:25 },
+  builder:    { hp:80,  speed:88, radius:8,  cost:50,  buildTime:6,  damage:0,  range:0,   cooldown:1 },
+  soldier:    { hp:110, speed:92, radius:8,  cost:50,  buildTime:5,  damage:11, range:115, cooldown:.75 },
+  tank:       { hp:300, speed:62, radius:14, cost:130, buildTime:12, damage:30, range:155, cooldown:1.6 },
+  drone:      { hp:45,  speed:105,radius:6,  cost:35,  buildTime:4,  damage:6,  range:95,  cooldown:.4,  flying:true },
+  helicopter: { hp:175, speed:148,radius:12, cost:110, buildTime:10, damage:15, range:135, cooldown:.6,  flying:true },
+  destroyer:  { hp:520, speed:44, radius:17, cost:200, buildTime:16, damage:48, range:205, cooldown:2.2 }
+};
+
+const COMBAT_KINDS = ['soldier','tank','drone','helicopter','destroyer'];
+const IS_COMBAT = {};
+COMBAT_KINDS.forEach(k => IS_COMBAT[k] = true);
+const COMBAT_BY_COST = ['drone','soldier','helicopter','tank','destroyer'];
+
+const BUILDING_STATS = {
+  base:       { hp:3200, radius:38, cost:0,   buildTime:0,  damage:25, range:300, cooldown:1.2 },
+  factory:    { hp:750,  radius:28, cost:150, buildTime:22 },
+  turret:     { hp:420,  radius:18, cost:100, buildTime:14, damage:18, range:235, cooldown:1.0 },
+  aa:         { hp:520,  radius:20, cost:220, buildTime:20, damage:30, range:340, cooldown:.55 },
+  laser:      { hp:620,  radius:24, cost:700, buildTime:40, damage:420, range:480, cooldown:5.0 },
+  drilling:   { hp:500,  radius:22, cost:350, buildTime:75 },
+  protection: { hp:600,  radius:26, cost:300, buildTime:35, effectRadius:300, damageReduce:0.4 }
+};
+
+const BUILDING_NAME = {
+  base:'Штаб', factory:'Завод', turret:'Турель', aa:'ПВО',
+  laser:'Лазер', drilling:'Буровая', protection:'Защита'
+};
+
+const OBSTACLE_STATS = {
+  tree: { hp:70,  radius:14, yieldAmt:25,  color:'#2f7d4f', dark:'#1a4a2e' },
+  rock: { hp:160, radius:18, yieldAmt:55,  color:'#7a8590', dark:'#4a535c' },
+  ruin: { hp:480, radius:30, yieldAmt:190, color:'#8a6b3f', dark:'#54401f' }
+};
+
+const UNIT_NAME = {
+  harvester:'Добытчик', builder:'Строитель',
+  soldier:'Солдат', tank:'Танк', drone:'Дрон', helicopter:'Вертолёт', destroyer:'Разрушитель'
+};
+
+const DIFFICULTY = {
+  easy:   { income:6,  prodSpeed:0.90, wait:1.6, attackMul:1.7, bigSize:4 },
+  normal: { income:14, prodSpeed:1.10, wait:1.0, attackMul:1.0, bigSize:5 },
+  hard:   { income:26, prodSpeed:1.40, wait:0.7, attackMul:0.6, bigSize:6 }
+};
+
+/* =========================================================
+   СОСТОЯНИЕ
+   ========================================================= */
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const cam = { x: 1000, y: 1700, zoom: 1 };
+const state = {
+  phase: 'menu',
+  hardMode: false,
+  entities: [],
+  nodes: [],
+  projectiles: [],
+  effects: [],
+  selection: [],
+  placing: null,
+  drag: null,
+  resources: [400, 320, 320],
+  gameOver: null,
+  time: 0
+};
+const AIS = {};
+const mouseScreen = { x: 0, y: 0 };
+const mouseWorld = { x: 0, y: 0 };
+const keys = {};
+let nextId = 1;
+let uiDirty = true;
+let prodTimer = 0;
+
+/* =========================================================
+   УТИЛИТЫ
+   ========================================================= */
+const rand = (a, b) => a + Math.random() * (b - a);
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function isInCenter(obj) {
+  return Math.hypot(obj.x - CENTER.x, obj.y - CENTER.y) < CENTER.radius;
+}
+
+function isEnemy(aTeam, bTeam) {
+  if (aTeam === bTeam) return false;
+  if (aTeam === -1 || bTeam === -1) return false;
+  if (state.hardMode && aTeam !== 0 && bTeam !== 0) return false;
+  return true;
+}
+
+function unitCost(kind, factory, inCenter) {
+  let c = UNIT_STATS[kind].cost * (factory ? FACTORY_MULT : 1);
+  if (inCenter) c = Math.round(c * CENTER_COST_MULT);
+  return c;
+}
+function unitBuildTime(kind, factory) {
+  return UNIT_STATS[kind].buildTime * (factory ? FACTORY_MULT : 1);
+}
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  cam.zoom = clamp(Math.min(canvas.width / 1600, canvas.height / 950), 0.45, 1.4);
+  clampCam();
+}
+
+function clampCam() {
+  const hw = canvas.width / (2 * cam.zoom);
+  const hh = canvas.height / (2 * cam.zoom);
+  cam.x = (WORLD.w <= hw * 2) ? WORLD.w / 2 : clamp(cam.x, hw, WORLD.w - hw);
+  cam.y = (WORLD.h <= hh * 2) ? WORLD.h / 2 : clamp(cam.y, hh, WORLD.h - hh);
+}
+
+function screenToWorld(sx, sy) {
+  return {
+    x: (sx - canvas.width / 2) / cam.zoom + cam.x,
+    y: (sy - canvas.height / 2) / cam.zoom + cam.y
+  };
+}
+
+/* =========================================================
+   ФАБРИКИ ОБЪЕКТОВ
+   ========================================================= */
+function makeUnit(team, kind, x, y) {
+  const s = UNIT_STATS[kind];
+  return {
+    id: nextId++, type:'unit', team, kind, x, y,
+    hp:s.hp, maxHp:s.hp, radius:s.radius, speed:s.speed,
+    damage:s.damage || 0, range:s.range || 0,
+    cooldown:s.cooldown || 1, cd: rand(0, .5),
+    flying: !!s.flying,
+    carrying:0, capacity:s.capacity || 0,
+    phase:'gather', node:null, order:null, target:null,
+    aggro: 240, aimAngle: team === 0 ? 0 : Math.PI, flash:0,
+    garrison: false
+  };
+}
+
+function makeSite(team, kind, x, y) {
+  const s = BUILDING_STATS[kind];
+  return {
+    id: nextId++, type:'building', team, kind, x, y,
+    hp: s.hp * 0.2, maxHp: s.hp, radius: s.radius,
+    progress: 0, built: false, buildTime: s.buildTime,
+    queue: [], flash: 0, cd: 0, aimAngle: 0,
+    active: false, incomeTimer: 0
+  };
+}
+
+function makeBase(team, x, y) {
+  const s = BUILDING_STATS.base;
+  return {
+    id: nextId++, type:'building', team, kind:'base', x, y,
+    hp:s.hp, maxHp:s.hp, radius:s.radius,
+    progress:1, built:true, buildTime:0,
+    queue:[], flash:0, cd:0, aimAngle:0,
+    active:false, incomeTimer:0
+  };
+}
+
+function makeObstacle(kind, x, y) {
+  const s = OBSTACLE_STATS[kind];
+  return {
+    id: nextId++, type:'obstacle', team:-1, kind, x, y,
+    hp:s.hp, maxHp:s.hp, radius:s.radius,
+    yieldAmt: s.yieldAmt, flash:0, seed: Math.random() * 100
+  };
+}
+
+/* =========================================================
+   ИНИЦИАЛИЗАЦИЯ
+   ========================================================= */
+function initGame(diffKey) {
+  const diff = DIFFICULTY[diffKey];
+  state.hardMode = diffKey === 'hard';
+
+  state.entities = [];
+  state.nodes = [];
+  state.projectiles = [];
+  state.effects = [];
+  state.selection = [];
+  state.placing = null;
+  state.drag = null;
+  state.resources = [400, 320, 320];
+  state.gameOver = null;
+  state.time = 0;
+  state.phase = 'playing';
+
+  AIS[1] = { team:1, income: diff.income, prodSpeed: diff.prodSpeed,
+             timer: diff.wait, attackTimer: rand(22, 34) * diff.attackMul,
+             attackMul: diff.attackMul, bigSize: diff.bigSize };
+  AIS[2] = { team:2, income: diff.income * 0.85, prodSpeed: diff.prodSpeed * 0.95,
+             timer: diff.wait * 1.2, attackTimer: rand(26, 40) * diff.attackMul,
+             attackMul: diff.attackMul, bigSize: diff.bigSize };
+  if (state.hardMode) {
+    AIS[1].attackTimer = 120;
+    AIS[2].attackTimer = 120;
+  }
+
+  state.entities.push(makeBase(0, 600, 1700));
+  state.entities.push(makeBase(1, 5400, 810));
+  state.entities.push(makeBase(2, 5400, 2590));
+
+  const nodeDefs = [
+    [1020, 1250, 2600], [1020, 2100, 2600], [1300, 1700, 2200],
+    [5000, 450, 2600], [5000, 900, 2600], [4750, 1150, 2000],
+    [5000, 2400, 2600], [5000, 2950, 2600], [4750, 2200, 2000],
+    [3000, 1700, 6000],
+    [2250, 900, 3000], [3750, 900, 3000], [2250, 2500, 3000], [3750, 2500, 3000],
+    [3000, 500, 3200], [3000, 2900, 3200],
+    [1850, 1700, 2400], [4150, 1700, 2400]
+  ];
+  for (const [x, y, a] of nodeDefs) {
+    state.nodes.push({ x, y, amount:a, max:a, radius:22 });
+  }
+
+  state.entities.push(makeUnit(0, 'harvester', 740, 1550));
+  state.entities.push(makeUnit(0, 'harvester', 740, 1850));
+  state.entities.push(makeUnit(0, 'builder',   760, 1700));
+  state.entities.push(makeUnit(0, 'soldier',   850, 1700));
+
+  state.entities.push(makeUnit(1, 'harvester', 5260, 660));
+  state.entities.push(makeUnit(1, 'harvester', 5260, 960));
+  state.entities.push(makeUnit(1, 'builder',   5240, 810));
+  state.entities.push(makeUnit(1, 'soldier',   5150, 810));
+
+  state.entities.push(makeUnit(2, 'harvester', 5260, 2440));
+  state.entities.push(makeUnit(2, 'harvester', 5260, 2740));
+  state.entities.push(makeUnit(2, 'builder',   5240, 2590));
+  state.entities.push(makeUnit(2, 'soldier',   5150, 2590));
+
+  spawnObstacles();
+
+  cam.x = 1000;
+  cam.y = 1700;
+  clampCam();
+
+  document.getElementById('overlay').classList.remove('show');
+  uiDirty = true;
+}
+
+function overlapsAny(x, y, r, ignore) {
+  for (const e of state.entities) {
+    if (e === ignore || e.hp <= 0 || e.type === 'unit') continue;
+    if (Math.hypot(e.x - x, e.y - y) < e.radius + r) return true;
+  }
+  for (const n of state.nodes) {
+    if (Math.hypot(n.x - x, n.y - y) < n.radius + r) return true;
+  }
+  return false;
+}
+
+function spawnObstacles() {
+  const kinds = ['tree','tree','tree','tree','rock','rock','ruin'];
+  const avoid = [[600,1700],[5400,810],[5400,2590]];
+  let placed = 0, tries = 0;
+  while (placed < 260 && tries < 20000) {
+    tries++;
+    const kind = kinds[Math.floor(Math.random() * kinds.length)];
+    const s = OBSTACLE_STATS[kind];
+    const x = rand(90, WORLD.w - 90);
+    const y = rand(90, WORLD.h - 90);
+    let bad = false;
+    for (const [ax, ay] of avoid) if (Math.hypot(ax - x, ay - y) < 400) { bad = true; break; }
+    if (bad) continue;
+    if (overlapsAny(x, y, s.radius + 26)) continue;
+    state.entities.push(makeObstacle(kind, x, y));
+    placed++;
+  }
+}
+
+/* =========================================================
+   УРОН
+   ========================================================= */
+function applyDamage(target, damage) {
+  if (!target || target.hp <= 0) return;
+  let dmg = damage;
+  if (target.type === 'unit') {
+    for (const e of state.entities) {
+      if (e.type !== 'building' || e.kind !== 'protection' || !e.built || e.hp <= 0) continue;
+      if (e.team !== target.team) continue;
+      if (Math.hypot(e.x - target.x, e.y - target.y) < BUILDING_STATS.protection.effectRadius) {
+        dmg *= (1 - BUILDING_STATS.protection.damageReduce);
+        break;
+      }
+    }
+  }
+  target.hp -= dmg;
+  target.flash = 0.15;
+  if (target.hp <= 0) {
+    state.effects.push({
+      x: target.x, y: target.y, t: 0, dur: .55,
+      r0: target.radius, r1: target.radius * 2.6,
+      color: target.team >= 0 ? TEAM[target.team].color : '#ffd166'
+    });
+  }
+}
+
+/* =========================================================
+   ДВИЖЕНИЕ
+   ========================================================= */
+function moveToward(e, tx, ty, dt, stopDist) {
+  stopDist = stopDist || 0;
+  const dx = tx - e.x, dy = ty - e.y;
+  const d = Math.hypot(dx, dy);
+  const remaining = d - stopDist;
+  if (remaining <= 0.5 || d < 0.0001) return d;
+  const step = Math.min(e.speed * dt, remaining);
+  e.x += (dx / d) * step;
+  e.y += (dy / d) * step;
+  if (e.type === 'unit') e.aimAngle = Math.atan2(dy, dx);
+  return d - step;
+}
+
+function resolveObstacles(u) {
+  if (u.flying) {
+    u.x = clamp(u.x, u.radius, WORLD.w - u.radius);
+    u.y = clamp(u.y, u.radius, WORLD.h - u.radius);
+    return;
+  }
+  for (const o of state.entities) {
+    if (o.type === 'unit' || o.hp <= 0) continue;
+    const dx = u.x - o.x, dy = u.y - o.y;
+    const d = Math.hypot(dx, dy);
+    const minD = o.radius + u.radius;
+    if (d < minD && d > 0.01) {
+      u.x += (dx / d) * (minD - d);
+      u.y += (dy / d) * (minD - d);
+    }
+  }
+  u.x = clamp(u.x, u.radius, WORLD.w - u.radius);
+  u.y = clamp(u.y, u.radius, WORLD.h - u.radius);
+}
+
+function separateUnits() {
+  const units = [];
+  for (const e of state.entities) if (e.type === 'unit' && e.hp > 0) units.push(e);
+  for (let i = 0; i < units.length; i++) {
+    const a = units[i];
+    for (let j = i + 1; j < units.length; j++) {
+      const b = units[j];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.hypot(dx, dy);
+      const minD = a.radius + b.radius;
+      if (d < minD) {
+        if (d < 0.001) { a.x += rand(-1, 1); continue; }
+        const push = (minD - d) * 0.5;
+        const nx = dx / d, ny = dy / d;
+        a.x -= nx * push; a.y -= ny * push;
+        b.x += nx * push; b.y += ny * push;
+      }
+    }
+  }
+}
+
+/* =========================================================
+   ЛОГИКА ЮНИТОВ
+   ========================================================= */
+function nearestOf(e, list) {
+  let best = null, bd = Infinity;
+  for (const o of list) {
+    const d = dist(e, o);
+    if (d < bd) { bd = d; best = o; }
+  }
+  return best;
+}
+
+function nearestResource(u) {
+  const avail = state.nodes.filter(n => n.amount > 1);
+  if (!avail.length) return null;
+  return nearestOf(u, avail);
+}
+
+function findEnemyNear(u, radius) {
+  let best = null, bd = Infinity;
+  for (const e of state.entities) {
+    if (e.hp <= 0) continue;
+    if (!isEnemy(u.team, e.team)) continue;
+    const d = dist(u, e);
+    if (d < radius + e.radius && d < bd) { bd = d; best = e; }
+  }
+  return best;
+}
+
+function fire(src, target, damage, speed, big) {
+  state.projectiles.push({
+    x: src.x, y: src.y, target, speed, damage, team: src.team,
+    big: !!big, dead: false
+  });
+  const a = Math.atan2(target.y - src.y, target.x - src.x);
+  state.effects.push({
+    x: src.x + Math.cos(a) * src.radius,
+    y: src.y + Math.sin(a) * src.radius,
+    t: 0, dur: .12, r0: 2, r1: 11, color: TEAM[src.team].light
+  });
+}
+
+function updateHarvester(u, dt) {
+  if (u.order && u.order.type === 'move') {
+    const d = moveToward(u, u.order.x, u.order.y, dt, 6);
+    if (d < 16) u.order = null;
+    return;
+  }
+
+  const dropoffs = state.entities.filter(e =>
+    e.type === 'building' && e.team === u.team && e.hp > 0 && e.built);
+
+  if (u.phase === 'deliver' && u.carrying > 0) {
+    if (!dropoffs.length) { u.phase = 'gather'; return; }
+    const b = nearestOf(u, dropoffs);
+    if (dist(u, b) < b.radius + u.radius + 12) {
+      state.resources[u.team] += Math.floor(u.carrying);
+      u.carrying = 0;
+      u.phase = 'gather';
+    } else {
+      moveToward(u, b.x, b.y, dt, b.radius + u.radius + 8);
+    }
+    return;
+  }
+
+  u.phase = 'gather';
+  if (!u.node || u.node.amount <= 0.5) u.node = nearestResource(u);
+  if (!u.node) return;
+
+  const d = dist(u, u.node);
+  if (d < u.node.radius + u.radius + 12) {
+    const s = UNIT_STATS.harvester;
+    const amount = Math.min(s.gather * dt, u.node.amount, u.capacity - u.carrying);
+    u.carrying += amount;
+    u.node.amount -= amount;
+    if (u.carrying >= u.capacity - 0.01 || u.node.amount <= 0.5) u.phase = 'deliver';
+  } else {
+    moveToward(u, u.node.x, u.node.y, dt, u.node.radius + u.radius + 10);
+  }
+}
+
+function updateBuilder(u, dt) {
+  if (u.order && u.order.type === 'build') {
+    const site = u.order.site;
+    if (!site || site.hp <= 0 || site.built) {
+      u.order = null;
+    } else {
+      const d = dist(u, site);
+      const reach = site.radius + u.radius + 14;
+      if (d > reach) {
+        moveToward(u, site.x, site.y, dt, reach);
+      } else {
+        u.aimAngle = Math.atan2(site.y - u.y, site.x - u.x);
+        site.progress += dt / site.buildTime;
+        if (site.progress >= 1) {
+          site.progress = 1;
+          site.built = true;
+          site.hp = site.maxHp;
+          u.order = null;
+          state.effects.push({ x: site.x, y: site.y, t: 0, dur: .5, r0: 6, r1: 46, color: '#7dffb0' });
+        } else {
+          site.hp = Math.max(site.hp, site.maxHp * (0.2 + 0.8 * site.progress));
+        }
+      }
+      return;
+    }
+  }
+
+  if (u.order && u.order.type === 'move') {
+    const d = moveToward(u, u.order.x, u.order.y, dt, 6);
+    if (d < 16) u.order = null;
+    return;
+  }
+
+  if (!u.order) {
+    const sites = state.entities.filter(e =>
+      e.type === 'building' && e.team === u.team && !e.built && e.hp > 0);
+    if (sites.length) {
+      const s = nearestOf(u, sites);
+      if (s) u.order = { type:'build', site:s };
+    }
+  }
+}
+
+function updateCombat(u, dt) {
+  let target = null;
+
+  if (u.order && u.order.type === 'attack') {
+    if (u.order.target && u.order.target.hp > 0) target = u.order.target;
+    else u.order = null;
+  }
+
+  const hasOrder = !!u.order;
+
+  if (!target && (!hasOrder || u.order.type === 'attackmove')) {
+    target = findEnemyNear(u, u.aggro);
+  }
+
+  if (target) {
+    const d = dist(u, target);
+    const reach = u.range + target.radius;
+    u.aimAngle = Math.atan2(target.y - u.y, target.x - u.x);
+    if (d > reach) {
+      moveToward(u, target.x, target.y, dt, reach * 0.9);
+    } else if (u.cd <= 0) {
+      fire(u, target, u.damage,
+           u.kind === 'destroyer' ? 480 : (u.kind === 'drone' ? 700 : 620),
+           u.kind === 'destroyer' || u.kind === 'tank');
+      u.cd = u.cooldown;
+    }
+    return;
+  }
+
+  if (u.order && (u.order.type === 'move' || u.order.type === 'attackmove')) {
+    const d = moveToward(u, u.order.x, u.order.y, dt, 6);
+    if (d < 18) u.order = null;
+  }
+}
+
+function updateUnit(u, dt) {
+  if (u.cd > 0) u.cd -= dt;
+  if (u.flash > 0) u.flash -= dt;
+
+  if (u.garrison && Math.hypot(u.x - CENTER.x, u.y - CENTER.y) > CENTER.radius * 1.8) {
+    u.garrison = false;
+  }
+
+  switch (u.kind) {
+    case 'harvester': updateHarvester(u, dt); break;
+    case 'builder':   updateBuilder(u, dt);   break;
+    default:          updateCombat(u, dt);    break;
+  }
+}
+
+/* =========================================================
+   ЛОГИКА ЗДАНИЙ
+   ========================================================= */
+function tryProduce(b, kind) {
+  const s = UNIT_STATS[kind];
+  if (!s || !b.built || b.hp <= 0) return false;
+  if (b.queue.length >= 5) return false;
+
+  const isFactory = b.kind === 'factory';
+  const cost = unitCost(kind, isFactory, isInCenter(b));
+  if (state.resources[b.team] < cost) return false;
+
+  state.resources[b.team] -= cost;
+  const time = unitBuildTime(kind, isFactory);
+  b.queue.push({ kind, t: time, total: time });
+  return true;
+}
+
+function handleBaseOrTurret(b, st, dt, isTurret) {
+  b.cd -= dt;
+  let best = null, bd = Infinity;
+  for (const e of state.entities) {
+    if (e.hp <= 0) continue;
+    if (!isEnemy(b.team, e.team)) continue;
+    const d = dist(b, e);
+    if (d < st.range + e.radius && d < bd) { bd = d; best = e; }
+  }
+  if (best) {
+    b.aimAngle = Math.atan2(best.y - b.y, best.x - b.x);
+    if (b.cd <= 0) {
+      let dmg = st.damage;
+      if (isTurret && isInCenter(b)) dmg *= CENTER_TURRET_DMG_MULT;
+      fire(b, best, dmg, 720, false);
+      b.cd = st.cooldown;
+    }
+  }
+  if (b.cd < -1) b.cd = 0;
+}
+
+function updateBuilding(b, dt) {
+  if (b.flash > 0) b.flash -= dt;
+
+  if (b.built) {
+    if (b.kind === 'turret') {
+      handleBaseOrTurret(b, BUILDING_STATS.turret, dt, true);
+    } else if (b.kind === 'base') {
+      handleBaseOrTurret(b, BUILDING_STATS.base, dt, false);
+    } else if (b.kind === 'aa') {
+      b.cd -= dt;
+      const st = BUILDING_STATS.aa;
+      let best = null, bd = Infinity;
+      for (const e of state.entities) {
+        if (e.hp <= 0 || e.type !== 'unit' || !e.flying) continue;
+        if (!isEnemy(b.team, e.team)) continue;
+        const d = dist(b, e);
+        if (d < st.range + e.radius && d < bd) { bd = d; best = e; }
+      }
+      if (best) {
+        b.aimAngle = Math.atan2(best.y - b.y, best.x - b.x);
+        if (b.cd <= 0) { fire(b, best, st.damage, 700, false); b.cd = st.cooldown; }
+      }
+      if (b.cd < -1) b.cd = 0;
+    } else if (b.kind === 'laser') {
+      b.cd -= dt;
+      const st = BUILDING_STATS.laser;
+      if (b.cd <= 0) {
+        let best = null, bd = Infinity;
+        for (const e of state.entities) {
+          if (e.hp <= 0) continue;
+          if (!isEnemy(b.team, e.team)) continue;
+          const d = dist(b, e);
+          if (d < st.range + e.radius && d < bd) { bd = d; best = e; }
+        }
+        if (best) {
+          b.aimAngle = Math.atan2(best.y - b.y, best.x - b.x);
+          applyDamage(best, st.damage);
+          b.cd = st.cooldown;
+          state.effects.push({
+            beam:true, x1:b.x, y1:b.y, x2:best.x, y2:best.y,
+            t:0, dur:.35, color:'#ff5566'
+          });
+        }
+      }
+      if (b.cd < -1) b.cd = 0;
+    } else if (b.kind === 'drilling') {
+      const nearRock = state.entities.some(o =>
+        o.type === 'obstacle' && o.kind === 'rock' && o.hp > 0 &&
+        Math.hypot(o.x - b.x, o.y - b.y) < 230
+      );
+      b.active = nearRock;
+      if (nearRock) {
+        b.incomeTimer += dt;
+        if (b.incomeTimer >= 4) {
+          b.incomeTimer = 0;
+          state.resources[b.team] += 15;
+          state.effects.push({
+            x: b.x, y: b.y - 12, t:0, dur:.55, r0:5, r1:28, color:'#ffd166'
+          });
+        }
+      }
+    }
+  }
+
+  if ((b.kind === 'base' || b.kind === 'factory') && b.queue.length) {
+    const job = b.queue[0];
+    const aiMul = AIS[b.team] ? AIS[b.team].prodSpeed : 1;
+    const centerMul = isInCenter(b) ? CENTER_PROD_MULT : 1;
+    job.t -= dt * aiMul * centerMul;
+    if (job.t <= 0) {
+      const a = rand(0, Math.PI * 2);
+      const r = b.radius + 28;
+      const x = clamp(b.x + Math.cos(a) * r, 24, WORLD.w - 24);
+      const y = clamp(b.y + Math.sin(a) * r, 24, WORLD.h - 24);
+      state.entities.push(makeUnit(b.team, job.kind, x, y));
+      b.queue.shift();
+    }
+  }
+}
+
+/* =========================================================
+   СНАРЯДЫ / ЭФФЕКТЫ
+   ========================================================= */
+function updateProjectiles(dt) {
+  for (const p of state.projectiles) {
+    if (!p.target || p.target.hp <= 0) { p.dead = true; continue; }
+    const dx = p.target.x - p.x, dy = p.target.y - p.y;
+    const d = Math.hypot(dx, dy);
+    const step = p.speed * dt;
+    if (d <= step + p.target.radius * 0.6) {
+      applyDamage(p.target, p.damage);
+      p.dead = true;
+      state.effects.push({
+        x: p.target.x, y: p.target.y, t: 0, dur: .22,
+        r0: 3, r1: 15, color: '#ffe08a'
+      });
+    } else {
+      p.x += (dx / d) * step;
+      p.y += (dy / d) * step;
+    }
+  }
+  state.projectiles = state.projectiles.filter(p => !p.dead);
+}
+
+function updateEffects(dt) {
+  for (const fx of state.effects) fx.t += dt;
+  state.effects = state.effects.filter(fx => fx.t < fx.dur);
+}
+
+/* =========================================================
+   ИИ
+   ========================================================= */
+function findBuildSpot(team, radius) {
+  const base = state.entities.find(e => e.team === team && e.kind === 'base' && e.hp > 0);
+  if (!base) return null;
+  for (let i = 0; i < 120; i++) {
+    const a = rand(0, Math.PI * 2);
+    const r = rand(160, 420);
+    const x = base.x + Math.cos(a) * r;
+    const y = base.y + Math.sin(a) * r;
+    if (x < radius + 26 || x > WORLD.w - radius - 26) continue;
+    if (y < radius + 26 || y > WORLD.h - radius - 26) continue;
+    if (overlapsAny(x, y, radius + 20)) continue;
+    return { x, y };
+  }
+  return null;
+}
+
+/* Проверка: есть ли в центральной зоне враждебные юниты или турели */
+function isCenterContestedByEnemy(team) {
+  for (const e of state.entities) {
+    if (e.hp <= 0) continue;
+    if (e.team === team || e.team === -1) continue;
+    if (!isEnemy(team, e.team)) continue;
+    if (!isInCenter(e)) continue;
+    if (e.type === 'unit') return true;
+    if (e.type === 'building' && e.built &&
+        (e.kind === 'turret' || e.kind === 'aa' || e.kind === 'laser')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function findBuildSpotInCenter(radius, team) {
+  /* Не строим в центре, если там уже есть вражеские юниты или турели */
+  if (isCenterContestedByEnemy(team)) return null;
+
+  for (let i = 0; i < 100; i++) {
+    const a = rand(0, Math.PI * 2);
+    const r = rand(radius + 30, CENTER.radius - radius - 40);
+    const x = CENTER.x + Math.cos(a) * r;
+    const y = CENTER.y + Math.sin(a) * r;
+    if (x < radius + 26 || x > WORLD.w - radius - 26) continue;
+    if (y < radius + 26 || y > WORLD.h - radius - 26) continue;
+    if (overlapsAny(x, y, radius + 20)) continue;
+    return { x, y };
+  }
+  return null;
+}
+
+function freeBuilders(team) {
+  return state.entities.filter(e =>
+    e.team === team && e.kind === 'builder' && e.hp > 0 &&
+    (!e.order || e.order.type !== 'build'));
+}
+
+function placeAISite(ai, kind, inCenter) {
+  const st = BUILDING_STATS[kind];
+  if (state.resources[ai.team] < st.cost) return false;
+  const fbs = freeBuilders(ai.team);
+  if (!fbs.length) return false;
+  const spot = inCenter
+    ? findBuildSpotInCenter(st.radius, ai.team)
+    : findBuildSpot(ai.team, st.radius);
+  if (!spot) return false;
+
+  state.resources[ai.team] -= st.cost;
+  const site = makeSite(ai.team, kind, spot.x, spot.y);
+  state.entities.push(site);
+
+  const b = nearestOf(site, fbs);
+  if (b) b.order = { type:'build', site };
+  return true;
+}
+
+/* Пробуем построить что-то одно по приоритету. Возвращает true, если начали стройку. */
+function tryAIBuild(ai) {
+  const team = ai.team;
+  const res = state.resources[team];
+  if (freeBuilders(team).length === 0) return false;
+
+  const sites = state.entities.filter(e =>
+    e.team === team && e.type === 'building' && !e.built && e.hp > 0);
+  if (sites.length >= 3) return false;
+
+  const builtCount = (kind) => state.entities.filter(e =>
+    e.team === team && e.kind === kind && e.built && e.hp > 0).length;
+  const siteCount = (kind) => sites.filter(s => s.kind === kind).length;
+
+  const facCount     = builtCount('factory') + siteCount('factory');
+  const turretCount  = builtCount('turret')  + siteCount('turret');
+  const aaCount      = builtCount('aa')      + siteCount('aa');
+  const laserCount   = builtCount('laser')   + siteCount('laser');
+
+  /* Приоритет обороны: сначала пара заводов, потом сразу защита,
+     дальше — расширение экономики и лазер. */
+  const order = [
+    { kind:'factory', have: facCount,    want: 2, cost: BUILDING_STATS.factory.cost },
+    { kind:'turret',  have: turretCount, want: 3, cost: BUILDING_STATS.turret.cost },
+    { kind:'aa',      have: aaCount,     want: 2, cost: BUILDING_STATS.aa.cost },
+    { kind:'factory', have: facCount,    want: 4, cost: BUILDING_STATS.factory.cost },
+    { kind:'laser',   have: laserCount,  want: 1, cost: BUILDING_STATS.laser.cost },
+    { kind:'turret',  have: turretCount, want: 5, cost: BUILDING_STATS.turret.cost }
+  ];
+
+  for (const p of order) {
+    if (p.have >= p.want) continue;
+    if (res < p.cost) continue;
+    if (placeAISite(ai, p.kind, false)) return true;
+  }
+  return false;
+}
+
+/* Атака. mode: 'big' — все юниты, 'small' — 2-3 юнита, не занятых гарнизоном */
+function launchAttack(ai, mode) {
+  const team = ai.team;
+  const allCombat = state.entities.filter(e =>
+    e.team === team && e.type === 'unit' && IS_COMBAT[e.kind] && e.hp > 0);
+  if (allCombat.length < 2) return;
+
+  let enemyBases;
+  if (state.hardMode) {
+    enemyBases = state.entities.filter(e => e.kind === 'base' && e.team === 0 && e.hp > 0);
+  } else {
+    enemyBases = state.entities.filter(e =>
+      e.kind === 'base' && isEnemy(team, e.team) && e.hp > 0);
+  }
+  if (!enemyBases.length) return;
+
+  const myBase = state.entities.find(e => e.team === team && e.kind === 'base' && e.hp > 0) || allCombat[0];
+  const target = nearestOf(myBase, enemyBases);
+
+  let list;
+  if (mode === 'big') {
+    list = allCombat;
+  } else {
+    const available = allCombat.filter(u => !u.garrison);
+    if (available.length < 2) return;
+    const count = Math.min(available.length, 2 + Math.floor(Math.random() * 2));
+    list = available.slice(0, count);
+  }
+  if (list.length < 2) return;
+
+  for (const u of list) {
+    u.garrison = false;
+    u.order = {
+      type:'attackmove',
+      x: target.x + rand(-120, 120),
+      y: target.y + rand(-120, 120)
+    };
+  }
+}
+
+function updateAI(ai, dt) {
+  const team = ai.team;
+  state.resources[team] += ai.income * dt;
+
+  /* --- таймер атаки --- */
+  ai.attackTimer -= dt;
+  if (ai.attackTimer <= 0) {
+    if (state.hardMode && state.time < 120) {
+      ai.attackTimer = 2;
+    } else {
+      const allCombat = state.entities.filter(e =>
+        e.team === team && e.type === 'unit' && IS_COMBAT[e.kind] && e.hp > 0);
+      const nonGarrison = allCombat.filter(u => !u.garrison);
+      const wantSmall = Math.random() < 0.2;
+
+      if (wantSmall && nonGarrison.length >= 3) {
+        /* Небольшой набег */
+        launchAttack(ai, 'small');
+        ai.attackTimer = rand(12, 20) * ai.attackMul;
+      } else if (allCombat.length >= ai.bigSize) {
+        /* Большая армия — атакуем всеми */
+        launchAttack(ai, 'big');
+        ai.attackTimer = rand(22, 35) * ai.attackMul;
+      } else {
+        /* Копим войска */
+        ai.attackTimer = 3;
+      }
+    }
+  }
+
+  ai.timer -= dt;
+  if (ai.timer > 0) return;
+  ai.timer = 0.9;
+
+  const mine = state.entities.filter(e => e.team === team && e.hp > 0);
+  const base = mine.find(e => e.kind === 'base');
+  if (!base) return;
+
+  const units      = mine.filter(e => e.type === 'unit');
+  const harvesters = units.filter(u => u.kind === 'harvester');
+  const builders   = units.filter(u => u.kind === 'builder');
+  const factories  = mine.filter(e => e.kind === 'factory' && e.built);
+  const army       = units.filter(u => IS_COMBAT[u.kind]);
+
+  /* --- производство в штабе --- */
+  const q = base.queue;
+  if (builders.length < 2 && q.length < 2) tryProduce(base, 'builder');
+  if (harvesters.length < 6 && q.length < 2) tryProduce(base, 'harvester');
+
+  /* --- строительство: приоритет обороны возле ядра --- */
+  tryAIBuild(ai);
+
+  /* --- иногда пробуем закрепиться в центре --- */
+  if (freeBuilders(team).length > 0 && Math.random() < 0.4) {
+    const sites = state.entities.filter(e =>
+      e.team === team && e.type === 'building' && !e.built && e.hp > 0);
+    if (sites.length < 3) {
+      const centerFac = factories.filter(f => isInCenter(f)).length +
+                        sites.filter(s => s.kind === 'factory' && isInCenter(s)).length;
+      const centerTur = mine.filter(t => t.kind === 'turret' && t.built && isInCenter(t)).length +
+                        sites.filter(s => s.kind === 'turret' && isInCenter(s)).length;
+      if (centerFac < 1) placeAISite(ai, 'factory', true);
+      else if (centerTur < 1) placeAISite(ai, 'turret', true);
+    }
+  }
+
+  /* --- производство армии --- */
+  for (const f of factories) {
+    if (f.queue.length) continue;
+    const r = state.resources[team];
+    const affordable = COMBAT_BY_COST.filter(k => r >= unitCost(k, true, isInCenter(f)));
+    if (!affordable.length) break;
+    const roll = Math.random();
+    let kind;
+    if (roll < 0.35)      kind = affordable[0];
+    else if (roll < 0.7)  kind = affordable[Math.floor(affordable.length / 2)];
+    else                  kind = affordable[affordable.length - 1];
+    tryProduce(f, kind);
+  }
+
+  /* --- гарнизон в центре --- */
+  for (const u of army) {
+    if (u.garrison && Math.hypot(u.x - CENTER.x, u.y - CENTER.y) > CENTER.radius * 1.8) {
+      u.garrison = false;
+    }
+  }
+  if (Math.random() < 0.25) {
+    const garCount = army.filter(u => u.garrison).length;
+    if (garCount < 3) {
+      const idle = army.filter(u => !u.garrison && (!u.order || u.order.type === 'move'));
+      if (idle.length) {
+        const u = idle[Math.floor(Math.random() * idle.length)];
+        u.garrison = true;
+        u.order = { type:'attackmove', x: CENTER.x + rand(-110, 110), y: CENTER.y + rand(-110, 110) };
+      }
+    }
+  }
+}
+
+/* =========================================================
+   ГЛАВНЫЙ ЦИКЛ
+   ========================================================= */
+function update(dt) {
+  state.time += dt;
+
+  for (const n of state.nodes) n.amount = Math.min(n.max, n.amount + 2.5 * dt);
+
+  for (const e of state.entities) {
+    if (e.type === 'building' && e.hp > 0) updateBuilding(e, dt);
+  }
+  for (const e of state.entities) {
+    if (e.type === 'unit' && e.hp > 0) updateUnit(e, dt);
+  }
+  for (const e of state.entities) {
+    if (e.type === 'unit' && e.hp > 0) resolveObstacles(e);
+  }
+  separateUnits();
+  updateProjectiles(dt);
+
+  for (const t of [1, 2]) if (AIS[t]) updateAI(AIS[t], dt);
+
+  state.entities = state.entities.filter(e => e.hp > 0);
+  state.selection = state.selection.filter(e => e.hp > 0);
+
+  checkGameOver();
+}
+
+function checkGameOver() {
+  if (state.gameOver) return;
+  const pBase = state.entities.some(e => e.team === 0 && e.kind === 'base');
+  if (!pBase) {
+    state.gameOver = 'lose';
+    showOverlay('Поражение', 'Ваш штаб уничтожен.', false);
+    return;
+  }
+  const anyEnemy = state.entities.some(e => e.team !== 0 && e.team !== -1 && e.kind === 'base');
+  if (!anyEnemy) {
+    state.gameOver = 'win';
+    showOverlay('Победа!', 'Все вражеские штабы уничтожены.', false);
+  }
+}
+
+function showOverlay(title, text, showDiff) {
+  const ov = document.getElementById('overlay');
+  document.getElementById('ovTitle').textContent = title;
+  document.getElementById('ovTitle').style.color = title === 'Победа!' ? '#7dffb0' :
+                                                   title === 'Поражение' ? '#ff7d7d' : '#eaf4ff';
+  document.getElementById('ovText').textContent = text;
+  const btns = document.getElementById('ovButtons');
+  if (showDiff) {
+    btns.innerHTML =
+      '<button data-diff="easy">Лёгкая<span class="diffdesc">медленное развитие ИИ</span></button>' +
+      '<button data-diff="normal">Средняя<span class="diffdesc">сбалансированный темп</span></button>' +
+      '<button data-diff="hard">Сложная<span class="diffdesc">ИИ объединяются против вас через 2 минуты</span></button>';
+  } else {
+    btns.innerHTML = '<button id="restart">Играть заново</button>';
+    document.getElementById('restart').onclick = () => {
+      state.phase = 'menu';
+      showOverlay('Стратегический симулятор',
+        'Выберите сложность — от неё зависит скорость развития противников.', true);
+    };
+  }
+  bindDiffButtons();
+  ov.classList.add('show');
+}
+
+function bindDiffButtons() {
+  document.querySelectorAll('#ovButtons [data-diff]').forEach(b => {
+    b.onclick = () => initGame(b.dataset.diff);
+  });
+}
+
+/* =========================================================
+   ОТРИСОВКА
+   ========================================================= */
+function viewBounds() {
+  const hw = canvas.width / (2 * cam.zoom);
+  const hh = canvas.height / (2 * cam.zoom);
+  return { l: cam.x - hw - 90, r: cam.x + hw + 90, t: cam.y - hh - 90, b: cam.y + hh + 90 };
+}
+
+function drawCenter() {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(CENTER.x, CENTER.y, CENTER.radius, 0, Math.PI * 2);
+  const grad = ctx.createRadialGradient(CENTER.x, CENTER.y, CENTER.radius * 0.2,
+                                        CENTER.x, CENTER.y, CENTER.radius);
+  grad.addColorStop(0, 'rgba(255,200,100,0.10)');
+  grad.addColorStop(1, 'rgba(255,200,100,0.02)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(255,200,100,0.55)';
+  ctx.lineWidth = 3.5;
+  ctx.setLineDash([18, 14]);
+  ctx.lineDashOffset = -state.time * 30;
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = 'rgba(255,210,120,0.75)';
+  ctx.font = 'bold 32px Segoe UI';
+  ctx.textAlign = 'center';
+  ctx.fillText('ЦЕНТР', CENTER.x, CENTER.y - CENTER.radius - 22);
+  ctx.font = 'bold 14px Segoe UI';
+  ctx.fillStyle = 'rgba(255,210,120,0.55)';
+  ctx.fillText('производство ×2 · скидка 20% · турели сильнее', CENTER.x, CENTER.y - CENTER.radius + 6);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+function drawNode(n) {
+  const s = n.radius;
+  const pulse = 0.85 + 0.15 * Math.sin(state.time * 2 + n.x * 0.01);
+
+  ctx.save();
+  ctx.translate(n.x, n.y);
+  ctx.shadowColor = 'rgba(255,205,80,.85)';
+  ctx.shadowBlur = 20 * pulse;
+  ctx.fillStyle = '#e8b93a';
+  ctx.beginPath();
+  ctx.moveTo(0, -s); ctx.lineTo(s * 0.75, 0); ctx.lineTo(0, s); ctx.lineTo(-s * 0.75, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255,248,215,.6)';
+  ctx.beginPath();
+  ctx.moveTo(0, -s * 0.5); ctx.lineTo(s * 0.36, 0); ctx.lineTo(0, s * 0.5); ctx.lineTo(-s * 0.36, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  const frac = n.amount / n.max;
+  ctx.fillStyle = 'rgba(0,0,0,.55)';
+  ctx.fillRect(n.x - s, n.y + s + 7, s * 2, 4);
+  ctx.fillStyle = frac > .3 ? '#e8b93a' : '#e07a3a';
+  ctx.fillRect(n.x - s, n.y + s + 7, s * 2 * frac, 4);
+}
+
+function drawObstacle(o) {
+  const s = OBSTACLE_STATS[o.kind];
+  ctx.save();
+  ctx.translate(o.x, o.y);
+
+  ctx.fillStyle = 'rgba(0,0,0,.3)';
+  ctx.beginPath();
+  ctx.ellipse(0, o.radius * 0.6, o.radius * 0.9, o.radius * 0.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const dmgFlash = o.flash > 0;
+
+  if (o.kind === 'tree') {
+    ctx.fillStyle = dmgFlash ? '#ffffff' : '#4a3220';
+    ctx.fillRect(-2.5, 0, 5, o.radius * 0.7);
+    ctx.fillStyle = dmgFlash ? '#ffffff' : s.dark;
+    ctx.beginPath();
+    ctx.arc(0, -2, o.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = dmgFlash ? '#ffffff' : s.color;
+    ctx.beginPath();
+    ctx.arc(-3, -5, o.radius * 0.72, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(4, -1, o.radius * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (o.kind === 'rock') {
+    ctx.fillStyle = dmgFlash ? '#ffffff' : s.dark;
+    ctx.beginPath();
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      const rr = o.radius * (0.82 + 0.22 * Math.sin(i * 2.7 + o.seed));
+      i ? ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) : ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = dmgFlash ? '#ffffff' : s.color;
+    ctx.beginPath();
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      const rr = o.radius * (0.58 + 0.16 * Math.sin(i * 2.7 + o.seed));
+      i ? ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) : ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    ctx.fillStyle = dmgFlash ? '#ffffff' : s.dark;
+    roundRect(-o.radius, -o.radius, o.radius * 2, o.radius * 2, 6);
+    ctx.fill();
+    ctx.strokeStyle = dmgFlash ? '#ffffff' : s.color;
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([6, 5]);
+    ctx.strokeRect(-o.radius * 0.72, -o.radius * 0.72, o.radius * 1.44, o.radius * 1.44);
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(-o.radius * 0.5, -o.radius * 0.5);
+    ctx.lineTo(o.radius * 0.5, o.radius * 0.5);
+    ctx.moveTo(o.radius * 0.5, -o.radius * 0.5);
+    ctx.lineTo(-o.radius * 0.5, o.radius * 0.5);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  if (o.hp < o.maxHp) {
+    const w = o.radius * 2, x = o.x - o.radius, y = o.y - o.radius - 9;
+    ctx.fillStyle = 'rgba(0,0,0,.6)';
+    ctx.fillRect(x, y, w, 3.5);
+    ctx.fillStyle = '#e8b93a';
+    ctx.fillRect(x, y, w * Math.max(0, o.hp / o.maxHp), 3.5);
+  }
+}
+
+function drawProtectionZone(b) {
+  const st = BUILDING_STATS.protection;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, st.effectRadius, 0, Math.PI * 2);
+  const grad = ctx.createRadialGradient(b.x, b.y, st.effectRadius * 0.3, b.x, b.y, st.effectRadius);
+  grad.addColorStop(0, 'rgba(100,255,180,0.10)');
+  grad.addColorStop(1, 'rgba(100,255,180,0.02)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(100,255,180,0.45)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([10, 8]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawBuilding(b) {
+  const team = TEAM[b.team];
+  const r = b.radius;
+  const sel = state.selection.includes(b);
+  const center = b.built && isInCenter(b);
+
+  if (b.built && b.kind === 'protection') drawProtectionZone(b);
+
+  ctx.save();
+  ctx.translate(b.x, b.y);
+
+  ctx.fillStyle = 'rgba(0,0,0,.4)';
+  ctx.beginPath();
+  ctx.ellipse(0, r * 0.55, r * 1.15, r * 0.55, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (!b.built) ctx.globalAlpha = 0.45 + 0.4 * b.progress;
+
+  if (sel) {
+    ctx.strokeStyle = 'rgba(140,255,180,.9)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 5]);
+    ctx.beginPath();
+    ctx.arc(0, 0, r + 10 + Math.sin(state.time * 5) * 2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  if (center) {
+    ctx.strokeStyle = 'rgba(255,200,100,.75)';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.arc(0, 0, r + 6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  if (b.kind === 'base') {
+    ctx.save();
+    ctx.rotate(Math.PI / 6);
+    ctx.fillStyle = b.flash > 0 ? '#ffdddd' : team.dark;
+    ctx.strokeStyle = team.color;
+    ctx.lineWidth = 3;
+    roundRect(-r, -r, r * 2, r * 2, 10);
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = team.color;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.42, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = team.dark;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.2, 0, Math.PI * 2); ctx.fill();
+    if (b.built) {
+      ctx.strokeStyle = team.light;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(b.aimAngle) * r * 0.3, Math.sin(b.aimAngle) * r * 0.3);
+      ctx.lineTo(Math.cos(b.aimAngle) * (r + 12), Math.sin(b.aimAngle) * (r + 12));
+      ctx.stroke();
+    }
+  } else if (b.kind === 'turret') {
+    ctx.fillStyle = b.flash > 0 ? '#ffdddd' : team.dark;
+    ctx.strokeStyle = team.color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      i ? ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r) : ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = team.light;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(b.aimAngle) * (r + 12), Math.sin(b.aimAngle) * (r + 12));
+    ctx.stroke();
+    ctx.fillStyle = team.color;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.42, 0, Math.PI * 2); ctx.fill();
+  } else if (b.kind === 'aa') {
+    ctx.fillStyle = b.flash > 0 ? '#ffdddd' : team.dark;
+    ctx.strokeStyle = team.color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.save();
+    ctx.rotate(state.time * 1.8);
+    ctx.strokeStyle = team.light;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, r * 0.85, 0, 0.9);
+    ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = team.color;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = team.light;
+    ctx.lineWidth = 4;
+    for (const off of [-0.35, 0.35]) {
+      const a = b.aimAngle + off;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * r * 0.4, Math.sin(a) * r * 0.4);
+      ctx.lineTo(Math.cos(a) * (r + 11), Math.sin(a) * (r + 11));
+      ctx.stroke();
+    }
+  } else if (b.kind === 'laser') {
+    ctx.fillStyle = b.flash > 0 ? '#ffdddd' : team.dark;
+    ctx.strokeStyle = team.color;
+    ctx.lineWidth = 3;
+    roundRect(-r, -r, r * 2, r * 2, 8);
+    ctx.fill(); ctx.stroke();
+    const glow = 0.55 + 0.45 * Math.sin(state.time * 6);
+    ctx.fillStyle = `rgba(255,80,100,${glow})`;
+    ctx.shadowColor = '#ff5566';
+    ctx.shadowBlur = 18;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#ffd0d6';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(b.aimAngle) * r * 0.4, Math.sin(b.aimAngle) * r * 0.4);
+    ctx.lineTo(Math.cos(b.aimAngle) * (r + 15), Math.sin(b.aimAngle) * (r + 15));
+    ctx.stroke();
+  } else if (b.kind === 'drilling') {
+    ctx.fillStyle = b.flash > 0 ? '#ffdddd' : team.dark;
+    ctx.strokeStyle = team.color;
+    ctx.lineWidth = 3;
+    roundRect(-r, -r, r * 2, r * 2, 4);
+    ctx.fill(); ctx.stroke();
+    ctx.save();
+    ctx.rotate(state.time * (b.active ? 3 : 0));
+    ctx.fillStyle = b.active ? '#ffd166' : team.color;
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a) * r * 0.7, Math.sin(a) * r * 0.7);
+      ctx.lineTo(Math.cos(a + 0.5) * r * 0.7, Math.sin(a + 0.5) * r * 0.7);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.fillStyle = b.active ? '#ffd166' : team.dark;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.22, 0, Math.PI * 2); ctx.fill();
+  } else if (b.kind === 'protection') {
+    ctx.fillStyle = b.flash > 0 ? '#ffdddd' : team.dark;
+    ctx.strokeStyle = team.color;
+    ctx.lineWidth = 2.5;
+    roundRect(-r * 0.85, -r * 0.85, r * 1.7, r * 1.7, 4);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(100,255,180,.85)';
+    ctx.beginPath();
+    ctx.moveTo(0, -r * 0.55);
+    ctx.lineTo(r * 0.55, -r * 0.2);
+    ctx.lineTo(r * 0.55, r * 0.2);
+    ctx.lineTo(0, r * 0.65);
+    ctx.lineTo(-r * 0.55, r * 0.2);
+    ctx.lineTo(-r * 0.55, -r * 0.2);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    ctx.fillStyle = b.flash > 0 ? '#ffdddd' : team.dark;
+    ctx.strokeStyle = team.color;
+    ctx.lineWidth = 3;
+    roundRect(-r, -r, r * 2, r * 2, 8);
+    ctx.fill(); ctx.stroke();
+    ctx.save();
+    ctx.rotate(state.time * 0.7);
+    ctx.fillStyle = team.color;
+    ctx.globalAlpha *= 0.85;
+    ctx.fillRect(-r * 0.36, -r * 0.36, r * 0.72, r * 0.72);
+    ctx.restore();
+  }
+  ctx.restore();
+
+  const w = r * 2, x = b.x - r, y = b.y - r - 14;
+  ctx.fillStyle = 'rgba(0,0,0,.6)';
+  ctx.fillRect(x, y, w, 5);
+  const frac = Math.max(0, b.hp / b.maxHp);
+  ctx.fillStyle = b.team === 0 ? '#4ddc8f' : b.team === 1 ? '#ff6b6b' : '#b06bff';
+  ctx.fillRect(x, y, w * frac, 5);
+
+  if (!b.built) {
+    ctx.fillStyle = 'rgba(0,0,0,.65)';
+    ctx.fillRect(x, y + 7, w, 4);
+    ctx.fillStyle = '#7fd4ff';
+    ctx.fillRect(x, y + 7, w * b.progress, 4);
+    ctx.fillStyle = 'rgba(160,210,255,.85)';
+    ctx.font = 'bold 10px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.fillText('СТРОЙКА', b.x, y - 4);
+    ctx.textAlign = 'left';
+  } else if (b.queue.length) {
+    const job = b.queue[0];
+    const p = 1 - job.t / job.total;
+    ctx.fillStyle = 'rgba(0,0,0,.6)';
+    ctx.fillRect(x, y + 7, w, 3);
+    ctx.fillStyle = '#7fd4ff';
+    ctx.fillRect(x, y + 7, w * p, 3);
+  }
+}
+
+function drawUnit(u) {
+  const team = TEAM[u.team];
+  const r = u.radius;
+  const sel = state.selection.includes(u);
+  const lift = u.flying ? 8 + Math.sin(state.time * 4 + u.id) * 2 : 0;
+
+  ctx.save();
+  ctx.translate(u.x, u.y - lift);
+
+  if (u.flying) {
+    ctx.fillStyle = 'rgba(0,0,0,.22)';
+    ctx.beginPath();
+    ctx.ellipse(0, r * 0.9 + lift, r * 0.8, r * 0.35, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = 'rgba(0,0,0,.35)';
+    ctx.beginPath();
+    ctx.ellipse(0, r * 0.65, r * 0.9, r * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (sel) {
+    ctx.strokeStyle = 'rgba(140,255,180,.95)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, r + 5, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  const flashing = u.flash > 0;
+
+  if (u.kind === 'harvester') {
+    ctx.fillStyle = flashing ? '#ffffff' : '#d9a520';
+    ctx.strokeStyle = team.color;
+    ctx.lineWidth = 2.5;
+    roundRect(-r * 0.85, -r * 0.85, r * 1.7, r * 1.7, 3);
+    ctx.fill(); ctx.stroke();
+    if (u.carrying > 0) {
+      ctx.fillStyle = '#ffe27a';
+      ctx.fillRect(-r * 0.85, -r * 0.85 - 4, r * 1.7 * (u.carrying / u.capacity), 2.5);
+    }
+  } else if (u.kind === 'builder') {
+    ctx.fillStyle = flashing ? '#ffffff' : '#e0e6ee';
+    ctx.strokeStyle = team.color;
+    ctx.lineWidth = 2.5;
+    roundRect(-r * 0.8, -r * 0.8, r * 1.6, r * 1.6, 2);
+    ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#2b3a4a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.5, -r * 0.5); ctx.lineTo(r * 0.5, r * 0.5);
+    ctx.moveTo(r * 0.5, -r * 0.5);  ctx.lineTo(-r * 0.5, r * 0.5);
+    ctx.stroke();
+  } else if (u.kind === 'soldier') {
+    ctx.fillStyle = flashing ? '#ffffff' : team.color;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = team.dark; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = '#eaf4ff'; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(u.aimAngle) * r * 0.5, Math.sin(u.aimAngle) * r * 0.5);
+    ctx.lineTo(Math.cos(u.aimAngle) * (r + 7), Math.sin(u.aimAngle) * (r + 7));
+    ctx.stroke();
+  } else if (u.kind === 'tank') {
+    ctx.fillStyle = flashing ? '#ffffff' : team.dark;
+    ctx.strokeStyle = team.color; ctx.lineWidth = 3;
+    roundRect(-r * 0.9, -r * 0.75, r * 1.8, r * 1.5, 4);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = team.color;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.45, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = team.light; ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(u.aimAngle) * r * 0.4, Math.sin(u.aimAngle) * r * 0.4);
+    ctx.lineTo(Math.cos(u.aimAngle) * (r + 10), Math.sin(u.aimAngle) * (r + 10));
+    ctx.stroke();
+  } else if (u.kind === 'destroyer') {
+    ctx.fillStyle = flashing ? '#ffffff' : team.dark;
+    ctx.strokeStyle = team.color; ctx.lineWidth = 3.5;
+    roundRect(-r, -r * 0.8, r * 2, r * 1.6, 5);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = team.color;
+    roundRect(-r * 0.55, -r * 0.5, r * 1.1, r, 3);
+    ctx.fill();
+    ctx.strokeStyle = team.light; ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(u.aimAngle) * r * 0.4, Math.sin(u.aimAngle) * r * 0.4);
+    ctx.lineTo(Math.cos(u.aimAngle) * (r + 13), Math.sin(u.aimAngle) * (r + 13));
+    ctx.stroke();
+  } else if (u.kind === 'drone') {
+    ctx.strokeStyle = team.color; ctx.lineWidth = 2;
+    ctx.fillStyle = flashing ? '#ffffff' : team.light;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = team.color; ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      const a = state.time * 9 + i * 2.1;
+      ctx.beginPath();
+      ctx.arc(0, 0, r + 4, a, a + 1.1);
+      ctx.stroke();
+    }
+  } else if (u.kind === 'helicopter') {
+    ctx.fillStyle = flashing ? '#ffffff' : team.dark;
+    ctx.strokeStyle = team.color; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 1.15, r * 0.7, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = team.color;
+    ctx.beginPath(); ctx.arc(r * 0.2, 0, r * 0.4, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(200,230,255,.75)';
+    ctx.lineWidth = 2;
+    const spin = state.time * 26;
+    for (let i = 0; i < 2; i++) {
+      const a = spin + i * Math.PI / 2;
+      ctx.beginPath();
+      ctx.moveTo(-Math.cos(a) * (r + 8), -Math.sin(a) * (r + 8) * 0.5);
+      ctx.lineTo(Math.cos(a) * (r + 8), Math.sin(a) * (r + 8) * 0.5);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = team.light; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-r * 1.1, 0); ctx.lineTo(-r * 1.7, 0);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  if (u.hp < u.maxHp) {
+    const w = r * 2.2;
+    const x = u.x - w / 2, y = u.y - r - 9 - lift;
+    ctx.fillStyle = 'rgba(0,0,0,.6)';
+    ctx.fillRect(x, y, w, 3.5);
+    ctx.fillStyle = u.team === 0 ? '#4ddc8f' : u.team === 1 ? '#ff6b6b' : '#b06bff';
+    ctx.fillRect(x, y, w * Math.max(0, u.hp / u.maxHp), 3.5);
+  }
+}
+
+function render() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#04060a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.save();
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.scale(cam.zoom, cam.zoom);
+  ctx.translate(-cam.x, -cam.y);
+
+  const vb = viewBounds();
+
+  const g = ctx.createLinearGradient(0, 0, 0, WORLD.h);
+  g.addColorStop(0, '#0c141d');
+  g.addColorStop(1, '#080d13');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, WORLD.w, WORLD.h);
+
+  ctx.strokeStyle = 'rgba(70,130,190,.07)';
+  ctx.lineWidth = 1 / cam.zoom;
+  ctx.beginPath();
+  const step = 100;
+  const gx0 = Math.floor(vb.l / step) * step;
+  const gy0 = Math.floor(vb.t / step) * step;
+  for (let x = gx0; x <= vb.r; x += step) { ctx.moveTo(x, vb.t); ctx.lineTo(x, vb.b); }
+  for (let y = gy0; y <= vb.b; y += step) { ctx.moveTo(vb.l, y); ctx.lineTo(vb.r, y); }
+  ctx.stroke();
+
+  drawCenter();
+
+  ctx.strokeStyle = 'rgba(80,150,220,.35)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(1.5, 1.5, WORLD.w - 3, WORLD.h - 3);
+
+  for (const n of state.nodes) {
+    if (n.x < vb.l || n.x > vb.r || n.y < vb.t || n.y > vb.b) continue;
+    drawNode(n);
+  }
+
+  for (const o of state.entities) {
+    if (o.type !== 'obstacle') continue;
+    if (o.x < vb.l || o.x > vb.r || o.y < vb.t || o.y > vb.b) continue;
+    drawObstacle(o);
+  }
+
+  for (const e of state.entities) {
+    if (e.type !== 'building') continue;
+    if (e.x < vb.l || e.x > vb.r || e.y < vb.t || e.y > vb.b) continue;
+    drawBuilding(e);
+  }
+
+  for (const e of state.entities) {
+    if (e.type !== 'unit') continue;
+    if (e.x < vb.l || e.x > vb.r || e.y < vb.t || e.y > vb.b) continue;
+    drawUnit(e);
+  }
+
+  for (const p of state.projectiles) {
+    ctx.fillStyle = p.big ? '#ffb347' : '#ffe9a8';
+    ctx.shadowColor = p.big ? '#ff9a3c' : '#ffe9a8';
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.big ? 4 : 2.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  for (const fx of state.effects) {
+    const p = fx.t / fx.dur;
+    if (fx.beam) {
+      ctx.globalAlpha = 1 - p;
+      ctx.strokeStyle = fx.color;
+      ctx.lineWidth = 9 * (1 - p) + 1.5;
+      ctx.beginPath(); ctx.moveTo(fx.x1, fx.y1); ctx.lineTo(fx.x2, fx.y2); ctx.stroke();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5 * (1 - p) + 0.5;
+      ctx.beginPath(); ctx.moveTo(fx.x1, fx.y1); ctx.lineTo(fx.x2, fx.y2); ctx.stroke();
+      ctx.globalAlpha = 1;
+      continue;
+    }
+    const rr = fx.r0 + (fx.r1 - fx.r0) * p;
+    ctx.globalAlpha = 1 - p;
+    ctx.strokeStyle = fx.color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(fx.x, fx.y, rr, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  if (state.drag && state.drag.active && state.drag.moved) {
+    const d = state.drag;
+    const x = Math.min(d.sx, d.x), y = Math.min(d.sy, d.y);
+    const w = Math.abs(d.x - d.sx), h = Math.abs(d.y - d.sy);
+    ctx.fillStyle = 'rgba(90,200,255,.13)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = 'rgba(120,220,255,.85)';
+    ctx.lineWidth = 1.5 / cam.zoom;
+    ctx.setLineDash([6 / cam.zoom, 4 / cam.zoom]);
+    ctx.strokeRect(x, y, w, h);
+    ctx.setLineDash([]);
+  }
+
+  if (state.placing) {
+    const s = BUILDING_STATS[state.placing.kind];
+    const r = s.radius;
+    const mx = mouseWorld.x, my = mouseWorld.y;
+    const ok = mx > r + 10 && mx < WORLD.w - r - 10 &&
+               my > r + 10 && my < WORLD.h - r - 10 &&
+               !overlapsAny(mx, my, r + 8) &&
+               state.resources[0] >= s.cost;
+    ctx.globalAlpha = .55;
+    ctx.fillStyle = ok ? '#2ecc71' : '#e74c3c';
+    ctx.strokeStyle = ok ? '#7dffb0' : '#ff7d7d';
+    ctx.lineWidth = 2.5;
+    roundRect(mx - r, my - r, r * 2, r * 2, 8);
+    ctx.fill(); ctx.stroke();
+    if (state.placing.kind === 'protection') {
+      ctx.globalAlpha = .18;
+      ctx.fillStyle = '#64ffb4';
+      ctx.beginPath();
+      ctx.arc(mx, my, BUILDING_STATS.protection.effectRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'rgba(255,255,255,.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(mx, my, r + 14, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+
+  drawMinimap();
+}
+
+/* ---------- миникарта ---------- */
+function minimapRect() {
+  const mw = Math.min(230, canvas.width * 0.2);
+  const mh = Math.round(mw * WORLD.h / WORLD.w);
+  return { x: canvas.width - mw - 14, y: canvas.height - mh - 14, w: mw, h: mh };
+}
+
+function drawMinimap() {
+  const m = minimapRect();
+  const sx = m.w / WORLD.w, sy = m.h / WORLD.h;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(6,12,20,.88)';
+  ctx.strokeStyle = 'rgba(80,150,220,.45)';
+  ctx.lineWidth = 1.5;
+  roundRect(m.x, m.y, m.w, m.h, 6);
+  ctx.fill(); ctx.stroke();
+
+  ctx.beginPath();
+  ctx.rect(m.x, m.y, m.w, m.h);
+  ctx.clip();
+
+  ctx.fillStyle = 'rgba(255,200,100,.16)';
+  ctx.beginPath();
+  ctx.arc(m.x + CENTER.x * sx, m.y + CENTER.y * sy, CENTER.radius * sx, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(232,185,58,.8)';
+  for (const n of state.nodes) {
+    ctx.fillRect(m.x + n.x * sx - 1, m.y + n.y * sy - 1, 2, 2);
+  }
+
+  ctx.fillStyle = 'rgba(90,120,90,.4)';
+  for (const o of state.entities) {
+    if (o.type !== 'obstacle') continue;
+    ctx.fillRect(m.x + o.x * sx - 1, m.y + o.y * sy - 1, 1.5, 1.5);
+  }
+
+  for (const e of state.entities) {
+    if (e.type !== 'building') continue;
+    ctx.fillStyle = TEAM[e.team].color;
+    const s = e.kind === 'base' ? 7 : 5;
+    ctx.fillRect(m.x + e.x * sx - s / 2, m.y + e.y * sy - s / 2, s, s);
+  }
+
+  for (const e of state.entities) {
+    if (e.type !== 'unit') continue;
+    ctx.fillStyle = TEAM[e.team].light;
+    ctx.fillRect(m.x + e.x * sx - 1, m.y + e.y * sy - 1, 2, 2);
+  }
+
+  const hw = canvas.width / (2 * cam.zoom), hh = canvas.height / (2 * cam.zoom);
+  ctx.strokeStyle = 'rgba(255,255,255,.7)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(
+    m.x + (cam.x - hw) * sx, m.y + (cam.y - hh) * sy,
+    hw * 2 * sx, hh * 2 * sy
+  );
+
+  ctx.restore();
+}
+
+/* =========================================================
+   ИНТЕРФЕЙС
+   ========================================================= */
+const uiRes       = document.getElementById('uiRes');
+const uiUnits     = document.getElementById('uiUnits');
+const uiFactories = document.getElementById('uiFactories');
+const uiRed       = document.getElementById('uiRed');
+const uiPurple    = document.getElementById('uiPurple');
+const prodPanel   = document.getElementById('prodPanel');
+const buildHint   = document.getElementById('buildHint');
+
+function updateHUD(dt) {
+  const r = Math.floor(state.resources[0]);
+  if (uiRes.textContent !== String(r)) uiRes.textContent = r;
+
+  const myUnits = state.entities.filter(e => e.team === 0 && e.type === 'unit').length;
+  if (uiUnits.textContent !== String(myUnits)) uiUnits.textContent = myUnits;
+
+  const myFac = state.entities.filter(e => e.team === 0 && e.kind === 'factory').length;
+  if (uiFactories.textContent !== String(myFac)) uiFactories.textContent = myFac;
+
+  const red = state.entities.filter(e => e.team === 1 && e.type === 'unit').length;
+  const pur = state.entities.filter(e => e.team === 2 && e.type === 'unit').length;
+  if (uiRed.textContent !== String(red)) uiRed.textContent = red;
+  if (uiPurple.textContent !== String(pur)) uiPurple.textContent = pur;
+
+  const buildersSelected = state.selection.filter(e => e.kind === 'builder' && e.team === 0).length;
+  document.querySelectorAll('#buildPanel [data-build]').forEach(b => {
+    const kind = b.dataset.build;
+    const cost = BUILDING_STATS[kind].cost;
+    b.disabled = state.resources[0] < cost || buildersSelected === 0;
+  });
+  buildHint.textContent = buildersSelected
+    ? `Выбрано строителей: ${buildersSelected}`
+    : 'Нужен строитель';
+
+  prodTimer -= dt;
+  if (uiDirty || prodTimer <= 0) {
+    prodTimer = 0.2;
+    uiDirty = false;
+    renderProdPanel();
+  }
+}
+
+function renderProdPanel() {
+  const sel = state.selection.filter(e => e.type === 'building' && e.team === 0);
+  if (sel.length !== 1) {
+    prodPanel.style.display = 'none';
+    prodPanel.innerHTML = '';
+    return;
+  }
+  const b = sel[0];
+
+  if (!b.built) {
+    prodPanel.style.display = 'block';
+    prodPanel.innerHTML = `<div class="panelTitle">${BUILDING_NAME[b.kind]}</div>
+      <div class="queue">Строится: ${Math.round(b.progress * 100)}%</div>`;
+    return;
+  }
+
+  if (b.kind !== 'base' && b.kind !== 'factory') {
+    prodPanel.style.display = 'block';
+    let extra = '';
+    if (b.kind === 'laser') extra = ` · заряд ${Math.max(0, b.cd).toFixed(1)} с`;
+    if (b.kind === 'drilling') extra = b.active ? ' · добывает ресурсы (+15/4с)' : ' · нет скал рядом';
+    if (b.kind === 'protection') extra = ` · -${Math.round(BUILDING_STATS.protection.damageReduce*100)}% урона в радиусе ${BUILDING_STATS.protection.effectRadius}`;
+    if (b.kind === 'turret' && isInCenter(b)) extra = ' · центр: +урон';
+    prodPanel.innerHTML = `<div class="panelTitle">${BUILDING_NAME[b.kind]}</div>
+      <div class="queue">Активно${extra}</div>`;
+    return;
+  }
+
+  prodPanel.style.display = 'block';
+  const opts = b.kind === 'base'
+    ? ['harvester','builder']
+    : ['soldier','tank','drone','helicopter','destroyer'];
+  const isFac = b.kind === 'factory';
+  const inCenter = isInCenter(b);
+
+  let html = `<div class="panelTitle">${BUILDING_NAME[b.kind]}${inCenter ? ' <span style="color:#ffc864">★ центр</span>' : ''}</div>`;
+  for (const k of opts) {
+    const cost = unitCost(k, isFac, inCenter);
+    const time = unitBuildTime(k, isFac);
+    const can = state.resources[0] >= cost;
+    const cls = inCenter ? 'btn centerBonus' : 'btn';
+    html += `<button class="${cls}" data-prod="${k}" ${can ? '' : 'disabled'}>` +
+            `${UNIT_NAME[k]} <span class="cost">${cost} · ${time}с</span></button>`;
+  }
+  if (b.queue.length) {
+    const job = b.queue[0];
+    html += `<div class="queue">Очередь: ${b.queue.length} · ${job.t.toFixed(1)} с</div>`;
+  }
+  prodPanel.innerHTML = html;
+
+  prodPanel.querySelectorAll('[data-prod]').forEach(btn => {
+    btn.onclick = () => { tryProduce(b, btn.dataset.prod); uiDirty = true; };
+  });
+}
+
+document.querySelectorAll('#buildPanel [data-build]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const kind = btn.dataset.build;
+    if (state.resources[0] < BUILDING_STATS[kind].cost) return;
+    if (!state.selection.some(e => e.kind === 'builder' && e.team === 0)) return;
+    state.placing = { kind };
+  });
+});
+
+/* =========================================================
+   ВВОД
+   ========================================================= */
+function pickEntity(x, y) {
+  for (let i = state.entities.length - 1; i >= 0; i--) {
+    const e = state.entities[i];
+    if (e.hp <= 0 || e.type === 'obstacle') continue;
+    if (Math.hypot(e.x - x, e.y - y) <= e.radius + 4) return e;
+  }
+  return null;
+}
+
+function clickSelect(x, y, add) {
+  const picked = pickEntity(x, y);
+  if (!add) state.selection = [];
+  if (picked && picked.team === 0) {
+    if (add) { if (!state.selection.includes(picked)) state.selection.push(picked); }
+    else state.selection = [picked];
+  }
+  uiDirty = true;
+}
+
+function selectInBox(x1, y1, x2, y2, add) {
+  if (!add) state.selection = [];
+  for (const e of state.entities) {
+    if (e.team !== 0 || e.type !== 'unit' || e.hp <= 0) continue;
+    if (e.x >= x1 && e.x <= x2 && e.y >= y1 && e.y <= y2 && !state.selection.includes(e)) {
+      state.selection.push(e);
+    }
+  }
+  uiDirty = true;
+}
+
+function moveGroup(units, x, y) {
+  const n = units.length;
+  if (!n) return;
+  const cols = Math.ceil(Math.sqrt(n));
+  const rows = Math.ceil(n / cols);
+  const sp = 34;
+  units.forEach((u, i) => {
+    const cx = i % cols, cy = Math.floor(i / cols);
+    u.order = {
+      type:'move',
+      x: x + (cx - (cols - 1) / 2) * sp,
+      y: y + (cy - (rows - 1) / 2) * sp
+    };
+    u.target = null;
+  });
+}
+
+function issueOrder(x, y) {
+  const sel = state.selection.filter(e => e.type === 'unit' && e.team === 0 && e.hp > 0);
+  if (!sel.length) return;
+
+  const target = pickEntity(x, y);
+  const node = state.nodes.find(n => n.amount > 1 && Math.hypot(n.x - x, n.y - y) <= n.radius + 14);
+
+  if (target && target.team !== 0 && target.team !== -1) {
+    for (const u of sel) {
+      if (!IS_COMBAT[u.kind]) { u.order = { type:'move', x, y }; u.target = null; continue; }
+      u.order = { type:'attack', target };
+      u.target = target;
+      u.garrison = false;
+    }
+    state.effects.push({ x, y, t:0, dur:.45, r0:4, r1:28, color:'#ff6b6b' });
+    return;
+  }
+
+  if (node) {
+    for (const u of sel) {
+      if (u.kind === 'harvester') { u.node = node; u.phase = 'gather'; u.order = null; }
+    }
+    const others = sel.filter(u => u.kind !== 'harvester');
+    if (others.length) moveGroup(others, x, y);
+    state.effects.push({ x, y, t:0, dur:.45, r0:4, r1:28, color:'#ffd166' });
+    return;
+  }
+
+  if (target && target.team === 0 && target.type === 'building') {
+    let any = false;
+    for (const u of sel) {
+      if (u.kind === 'harvester' && u.carrying > 0) { u.phase = 'deliver'; u.order = null; any = true; }
+    }
+    if (any) {
+      state.effects.push({ x, y, t:0, dur:.45, r0:4, r1:28, color:'#7dffb0' });
+      return;
+    }
+  }
+
+  for (const u of sel) u.garrison = false;
+  moveGroup(sel, x, y);
+  state.effects.push({ x, y, t:0, dur:.45, r0:4, r1:24, color:'#8fd8ff' });
+}
+
+function placeBuilding(x, y) {
+  const kind = state.placing.kind;
+  const s = BUILDING_STATS[kind];
+  const r = s.radius;
+  if (x < r + 12 || x > WORLD.w - r - 12 || y < r + 12 || y > WORLD.h - r - 12) return;
+  if (overlapsAny(x, y, r + 8)) return;
+  if (state.resources[0] < s.cost) return;
+
+  state.resources[0] -= s.cost;
+  const site = makeSite(0, kind, x, y);
+  state.entities.push(site);
+
+  for (const u of state.selection) {
+    if (u.kind === 'builder' && u.team === 0 && (!u.order || u.order.type !== 'build')) {
+      u.order = { type:'build', site };
+      break;
+    }
+  }
+  state.effects.push({ x, y, t:0, dur:.6, r0:8, r1:60, color:'#7fd4ff' });
+  state.placing = null;
+  uiDirty = true;
+}
+
+canvas.addEventListener('mousedown', ev => {
+  const m = minimapRect();
+  if (ev.clientX >= m.x && ev.clientX <= m.x + m.w &&
+      ev.clientY >= m.y && ev.clientY <= m.y + m.h) {
+    cam.x = (ev.clientX - m.x) / m.w * WORLD.w;
+    cam.y = (ev.clientY - m.y) / m.h * WORLD.h;
+    clampCam();
+    return;
+  }
+
+  if (state.phase !== 'playing' || state.gameOver) return;
+
+  const p = screenToWorld(ev.clientX, ev.clientY);
+
+  if (ev.button === 0) {
+    if (state.placing) { placeBuilding(p.x, p.y); return; }
+    state.drag = { sx:p.x, sy:p.y, x:p.x, y:p.y, active:true, moved:false, shift:ev.shiftKey };
+  } else if (ev.button === 2) {
+    if (state.placing) { state.placing = null; return; }
+    issueOrder(p.x, p.y);
+  }
+});
+
+window.addEventListener('mousemove', ev => {
+  mouseScreen.x = ev.clientX;
+  mouseScreen.y = ev.clientY;
+  const p = screenToWorld(ev.clientX, ev.clientY);
+  mouseWorld.x = p.x;
+  mouseWorld.y = p.y;
+  if (state.drag && state.drag.active) {
+    state.drag.x = p.x;
+    state.drag.y = p.y;
+    if (Math.hypot(p.x - state.drag.sx, p.y - state.drag.sy) > 6) state.drag.moved = true;
+  }
+});
+
+window.addEventListener('mouseup', ev => {
+  if (ev.button !== 0) return;
+  const d = state.drag;
+  if (!d || !d.active) { state.drag = null; return; }
+  d.active = false;
+
+  const p = screenToWorld(ev.clientX, ev.clientY);
+  if (d.moved) {
+    selectInBox(
+      Math.min(d.sx, p.x), Math.min(d.sy, p.y),
+      Math.max(d.sx, p.x), Math.max(d.sy, p.y),
+      d.shift
+    );
+  } else {
+    clickSelect(p.x, p.y, d.shift);
+  }
+  state.drag = null;
+});
+
+canvas.addEventListener('contextmenu', ev => ev.preventDefault());
+
+window.addEventListener('keydown', ev => {
+  const k = ev.key.toLowerCase();
+  keys[k] = true;
+
+  if (ev.key === 'Escape') {
+    state.placing = null;
+    state.selection = [];
+    uiDirty = true;
+  }
+  if (k === 'a' || k === 'ф') {
+    state.selection = state.entities.filter(e => e.team === 0 && e.type === 'unit' && e.hp > 0);
+    uiDirty = true;
+  }
+});
+window.addEventListener('keyup', ev => { keys[ev.key.toLowerCase()] = false; });
+
+/* =========================================================
+   КАМЕРА
+   ========================================================= */
+const EDGE = 40;
+function updateCamera(dt) {
+  let dx = 0, dy = 0;
+  if (mouseScreen.x < EDGE) dx = -1;
+  else if (mouseScreen.x > canvas.width - EDGE) dx = 1;
+  if (mouseScreen.y < EDGE) dy = -1;
+  else if (mouseScreen.y > canvas.height - EDGE) dy = 1;
+
+  if (keys['a'] || keys['arrowleft'] || keys['ф']) dx = -1;
+  if (keys['d'] || keys['arrowright'] || keys['в']) dx = 1;
+  if (keys['w'] || keys['arrowup'] || keys['ц']) dy = -1;
+  if (keys['s'] || keys['arrowdown'] || keys['ы']) dy = 1;
+
+  if (dx || dy) {
+    const speed = 1050 / cam.zoom;
+    cam.x += dx * speed * dt;
+    cam.y += dy * speed * dt;
+    clampCam();
+  }
+}
+
+/* =========================================================
+   ЗАПУСК
+   ========================================================= */
+let lastTime = performance.now();
+
+function loop(now) {
+  let dt = (now - lastTime) / 1000;
+  lastTime = now;
+  if (dt > 0.05) dt = 0.05;
+
+  if (state.phase === 'playing' && !state.gameOver) {
+    updateCamera(dt);
+    update(dt);
+    updateEffects(dt);
+  }
+
+  render();
+  if (state.phase === 'playing') updateHUD(dt);
+
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize', () => { resize(); });
+resize();
+bindDiffButtons();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
